@@ -113,6 +113,7 @@ class SelectStatementVisitor extends DelegatingVisitor implements PartRenderer {
 
 			Select select = (Select) segment;
 
+			builder.append(selectRenderContext.beforeRender().apply(select));
 			builder.append("SELECT ");
 
 			if (select.isDistinct()) {

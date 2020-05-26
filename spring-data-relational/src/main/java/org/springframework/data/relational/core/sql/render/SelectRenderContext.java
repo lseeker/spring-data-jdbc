@@ -29,6 +29,9 @@ import org.springframework.data.relational.core.sql.Select;
  * @since 1.1
  */
 public interface SelectRenderContext {
+	default Function<Select, ? extends CharSequence> beforeRender() {
+		return select -> "";
+	}
 
 	/**
 	 * Customization hook: Rendition of a part after the {@code SELECT} list and before any {@code FROM} renderings.
@@ -41,8 +44,7 @@ public interface SelectRenderContext {
 	}
 
 	/**
-	 * Customization hook: Rendition of a part after {@code FROM} table.
-	 * Renders an empty string by default.
+	 * Customization hook: Rendition of a part after {@code FROM} table. Renders an empty string by default.
 	 *
 	 * @return render {@link Function} invoked after rendering {@code FROM} table.
 	 */
