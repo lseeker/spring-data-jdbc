@@ -15,6 +15,9 @@
  */
 package org.springframework.data.relational.core.mapping;
 
+import java.util.Collections;
+import java.util.List;
+
 import org.springframework.data.mapping.PersistentProperty;
 import org.springframework.data.relational.core.sql.SqlIdentifier;
 import org.springframework.lang.Nullable;
@@ -25,6 +28,7 @@ import org.springframework.lang.Nullable;
  * @author Jens Schauder
  * @author Oliver Gierke
  * @author Bastian Wilhelm
+ * @author Yunyoung LEE
  */
 public interface RelationalPersistentProperty extends PersistentProperty<RelationalPersistentProperty> {
 
@@ -45,7 +49,12 @@ public interface RelationalPersistentProperty extends PersistentProperty<Relatio
 	@Override
 	RelationalPersistentEntity<?> getOwner();
 
+	@Deprecated
 	SqlIdentifier getReverseColumnName(PersistentPropertyPathExtension path);
+
+	default List<SqlIdentifier> getReverseColumnNames(PersistentPropertyPathExtension path) {
+		return Collections.singletonList(getReverseColumnName(path));
+	}
 
 	@Nullable
 	SqlIdentifier getKeyColumn();

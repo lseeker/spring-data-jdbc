@@ -15,8 +15,11 @@
  */
 package org.springframework.data.relational.core.mapping;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.data.mapping.Association;
 import org.springframework.data.mapping.PersistentEntity;
@@ -37,6 +40,7 @@ import org.springframework.util.StringUtils;
  * @author Greg Turnquist
  * @author Florian Lüdiger
  * @author Bastian Wilhelm
+ * @author Yunyoung LEE
  */
 public class BasicRelationalPersistentProperty extends AnnotationBasedPersistentProperty<RelationalPersistentProperty>
 		implements RelationalPersistentProperty {
@@ -172,6 +176,20 @@ public class BasicRelationalPersistentProperty extends AnnotationBasedPersistent
 
 		return collectionIdColumnName.get()
 				.orElseGet(() -> createDerivedSqlIdentifier(this.namingStrategy.getReverseColumnName(path)));
+	}
+
+	@Override
+	public List<SqlIdentifier> getReverseColumnNames(PersistentPropertyPathExtension path) {
+
+		// TODO reverse column names by annotations.
+		return collectionIdColumnName.get().map(Collections::singletonList).orElseGet(() -> {
+			List<RelationalPersistentProperty> idProperties = path.getLeafEntity().getIdProperties();
+			if (idProperties.size() < 2) {
+				// for compatibility < 2.3
+				return Collections.singletonList(createDerivedSqlIdentifier(namingStrategy.getReverseColumnName(path)));
+			}
+			return idProperties.stream().map(RelationalPersistentProperty::getColumnName).collect(Collectors.toList());
+		});
 	}
 
 	/*

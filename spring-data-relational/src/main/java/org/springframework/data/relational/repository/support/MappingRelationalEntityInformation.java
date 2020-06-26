@@ -15,6 +15,7 @@
  */
 package org.springframework.data.relational.repository.support;
 
+import org.springframework.data.domain.Persistable;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.sql.SqlIdentifier;
 import org.springframework.data.relational.repository.query.RelationalEntityInformation;
@@ -77,7 +78,7 @@ public class MappingRelationalEntityInformation<T, ID> extends PersistentEntityI
 	 */
 	@SuppressWarnings("unchecked")
 	private MappingRelationalEntityInformation(RelationalPersistentEntity<T> entity, @Nullable String customTableName,
-											   @Nullable Class<ID> idType) {
+			@Nullable Class<ID> idType) {
 
 		super(entity);
 
@@ -100,8 +101,17 @@ public class MappingRelationalEntityInformation<T, ID> extends PersistentEntityI
 	/* (non-Javadoc)
 	 * @see org.springframework.data.repository.core.support.PersistentEntityInformation#getIdType()
 	 */
+	@SuppressWarnings("unchecked")
 	@Override
 	public Class<ID> getIdType() {
+
+		if (entityMetadata.getTypeInformation().isSubTypeOf(Persistable.class)) {
+			try {
+				return (Class<ID>) entityMetadata.getType().getMethod("getId").getReturnType();
+			} catch (NoSuchMethodException | SecurityException e) {
+				// failback to property
+			}
+		}
 
 		if (this.entityMetadata.hasIdProperty()) {
 			return super.getIdType();

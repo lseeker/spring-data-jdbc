@@ -15,6 +15,10 @@
  */
 package org.springframework.data.relational.core.mapping;
 
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
+
 import org.springframework.data.mapping.model.MutablePersistentEntity;
 import org.springframework.data.relational.core.sql.SqlIdentifier;
 
@@ -24,6 +28,7 @@ import org.springframework.data.relational.core.sql.SqlIdentifier;
  *
  * @author Jens Schauder
  * @author Oliver Gierke
+ * @author Yunyoung LEE
  */
 public interface RelationalPersistentEntity<T> extends MutablePersistentEntity<T, RelationalPersistentProperty> {
 
@@ -38,6 +43,66 @@ public interface RelationalPersistentEntity<T> extends MutablePersistentEntity<T
 	 * Returns the column representing the identifier.
 	 *
 	 * @return will never be {@literal null}.
+	 * @deprecated since 2.3, use {@link #getIdColumns()} to support composite id.
 	 */
+	@Deprecated
 	SqlIdentifier getIdColumn();
+
+	/**
+	 * Returns list of columns representing identifiers.
+	 *
+	 * @return will never be empty.
+	 * @since 2.3
+	 */
+	default List<SqlIdentifier> getIdColumns() {
+		return getRequiredIdProperties().stream().map(RelationalPersistentProperty::getColumnName)
+				.collect(Collectors.toList());
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * 
+	 * @deprecated since 2.3, use {@link #getIdProperties()} to support composite id.
+	 */
+	@Override
+	@Deprecated
+	RelationalPersistentProperty getIdProperty();
+
+	/**
+	 * Returns list of id properties of the {@link RelationalPersistentEntity}. Can be empty in case this is an entity
+	 * completely handled by a custom conversion.
+	 *
+	 * @return list of id properties of the {@link RelationalPersistentEntity}.
+	 * @since 2.3
+	 */
+	default List<RelationalPersistentProperty> getIdProperties() {
+		return Collections.singletonList(getIdProperty());
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * 
+	 * @deprecated since 2.3, use {@link #getRequiredIdProperties()} to support composite id.
+	 */
+	@Override
+	@Deprecated
+	default RelationalPersistentProperty getRequiredIdProperty() {
+		return getRequiredIdProperties().get(0);
+	}
+
+	/**
+	 * Returns list of id properties of the {@link RelationalPersistentEntity}.
+	 * 
+	 * @return list of id properties of the {@link RelationalPersistentEntity}.
+	 * @since 2.3
+	 */
+	default List<RelationalPersistentProperty> getRequiredIdProperties() {
+		List<RelationalPersistentProperty> properties = getIdProperties();
+
+		if (!properties.isEmpty()) {
+			return properties;
+		}
+
+		throw new IllegalStateException(String.format("Required identifier properties not found for %s!", getType()));
+	}
 }
