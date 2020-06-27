@@ -181,9 +181,9 @@ public class BasicRelationalPersistentProperty extends AnnotationBasedPersistent
 	@Override
 	public List<SqlIdentifier> getReverseColumnNames(PersistentPropertyPathExtension path) {
 
-		// TODO reverse column names by annotations.
+		// TODO multiple reverse column name mapping by annotation.
 		return collectionIdColumnName.get().map(Collections::singletonList).orElseGet(() -> {
-			List<RelationalPersistentProperty> idProperties = path.getLeafEntity().getIdProperties();
+			List<RelationalPersistentProperty> idProperties = path.getParentPath().getLeafEntity().getIdProperties();
 			if (idProperties.size() < 2) {
 				// for compatibility < 2.3
 				return Collections.singletonList(createDerivedSqlIdentifier(namingStrategy.getReverseColumnName(path)));

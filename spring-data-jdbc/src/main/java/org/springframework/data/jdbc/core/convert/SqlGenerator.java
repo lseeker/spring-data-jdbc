@@ -50,13 +50,12 @@ import java.util.stream.Collectors;
  * @author Tyler Van Gorder
  * @author Milan Milanov
  * @author Myeonghyeon Lee
+ * @author Yunyoung LEE
  */
 class SqlGenerator {
 
 	static final SqlIdentifier VERSION_SQL_PARAMETER = SqlIdentifier.unquoted("___oldOptimisticLockingVersion");
-	static final SqlIdentifier ID_SQL_PARAMETER = SqlIdentifier.unquoted("id");
 	static final SqlIdentifier IDS_SQL_PARAMETER = SqlIdentifier.unquoted("ids");
-	static final SqlIdentifier ROOT_ID_PARAMETER = SqlIdentifier.unquoted("rootId");
 
 	private static final Pattern parameterPattern = Pattern.compile("\\W");
 	private final RelationalPersistentEntity<?> entity;
@@ -106,43 +105,48 @@ class SqlGenerator {
 	 *
 	 * @param path specifies the table and id to select
 	 * @param rootCondition the condition on the root of the path determining what to select
-	 * @param filterColumn the column to apply the IN-condition to.
+	 * @param filterColumns columns to apply the IN-condition to.
 	 * @return the IN condition
 	 */
 	private Condition getSubselectCondition(PersistentPropertyPathExtension path,
-			Function<Column, Condition> rootCondition, Column filterColumn) {
+			Function<Column, Condition> rootCondition, List<Column> filterColumns) {
 
 		PersistentPropertyPathExtension parentPath = path.getParentPath();
 
 		if (!parentPath.hasIdProperty()) {
 			if (parentPath.getLength() > 1) {
-				return getSubselectCondition(parentPath, rootCondition, filterColumn);
+				return getSubselectCondition(parentPath, rootCondition, filterColumns);
 			}
-			return rootCondition.apply(filterColumn);
+			return filterColumns.stream().map(rootCondition::apply).reduce((a, b) -> a.and(b)).get();
 		}
 
 		Table subSelectTable = Table.create(parentPath.getTableName());
-		Column idColumn = subSelectTable.column(parentPath.getIdColumnName());
-		Column selectFilterColumn = subSelectTable.column(parentPath.getEffectiveIdColumnName());
+		List<Column> idColumns = parentPath.getIdColumnNames().stream().map(subSelectTable::column)
+				.collect(Collectors.toList());
+		List<Column> selectFilterColumns = parentPath.getEffectiveIdColumnNames().stream().map(subSelectTable::column)
+				.collect(Collectors.toList());
 
 		Condition innerCondition;
 
 		if (parentPath.getLength() == 1) { // if the parent is the root of the path
 
 			// apply the rootCondition
-			innerCondition = rootCondition.apply(selectFilterColumn);
+			innerCondition = selectFilterColumns.stream().map(rootCondition::apply).reduce((a, b) -> a.and(b)).get();
 		} else {
 
 			// otherwise we need another layer of subselect
-			innerCondition = getSubselectCondition(parentPath, rootCondition, selectFilterColumn);
+			innerCondition = getSubselectCondition(parentPath, rootCondition, selectFilterColumns);
 		}
 
 		Select select = Select.builder() //
-				.select(idColumn) //
+				.select(idColumns) //
 				.from(subSelectTable) //
 				.where(innerCondition).build();
 
-		return filterColumn.in(select);
+		Expression columnExpression = filterColumns.size() == 1 ? filterColumns.get(0)
+				: Expressions.rowConstructor(filterColumns.toArray(new Column[0]));
+
+		return Conditions.in(columnExpression, select);
 	}
 
 	private BindMarker getBindMarker(SqlIdentifier columnName) {
@@ -365,12 +369,12 @@ class SqlGenerator {
 	 */
 	String createDeleteByPath(PersistentPropertyPath<RelationalPersistentProperty> path) {
 		return createDeleteByPathAndCriteria(new PersistentPropertyPathExtension(mappingContext, path),
-				filterColumn -> filterColumn.isEqualTo(getBindMarker(ROOT_ID_PARAMETER)));
+				filterColumn -> filterColumn.isEqualTo(getBindMarker(filterColumn.getName())));
 	}
 
 	private String createFindOneSql() {
 
-		Select select = selectBuilder().where(getIdColumn().isEqualTo(getBindMarker(ID_SQL_PARAMETER))) //
+		Select select = selectBuilder().where(oneCondition()) //
 				.build();
 
 		return render(select);
@@ -381,11 +385,11 @@ class SqlGenerator {
 		Table table = this.getTable();
 
 		Select select = StatementBuilder //
-			.select(getIdColumn()) //
-			.from(table) //
-			.where(getIdColumn().isEqualTo(getBindMarker(ID_SQL_PARAMETER))) //
-			.lock(lockMode) //
-			.build();
+				.select(getIdColumns()) //
+				.from(table) //
+				.where(oneCondition()) //
+				.lock(lockMode) //
+				.build();
 
 		return render(select);
 	}
@@ -395,10 +399,10 @@ class SqlGenerator {
 		Table table = this.getTable();
 
 		Select select = StatementBuilder //
-			.select(getIdColumn()) //
-			.from(table) //
-			.lock(lockMode) //
-			.build();
+				.select(getIdColumns()) //
+				.from(table) //
+				.lock(lockMode) //
+				.build();
 
 		return render(select);
 	}
@@ -443,7 +447,19 @@ class SqlGenerator {
 		SelectBuilder.SelectJoin baseSelect = selectBuilder.from(table);
 
 		for (Join join : joinTables) {
-			baseSelect = baseSelect.leftOuterJoin(join.joinTable).on(join.joinColumn).equals(join.parentId);
+
+			SelectBuilder.SelectOn selectOn = baseSelect.leftOuterJoin(join.joinTable);
+
+			SelectBuilder.SelectOnCondition selectOnCondition = null;
+			for (JoinCondition condition : join.joinConditions) {
+				if (selectOnCondition == null) {
+					selectOnCondition = selectOn.on(condition.joinColumn).equals(condition.parentId);
+				} else {
+					selectOnCondition = selectOnCondition.and(condition.joinColumn).equals(condition.parentId);
+				}
+			}
+
+			baseSelect = selectOnCondition;
 		}
 
 		return (SelectBuilder.SelectWhere) baseSelect;
@@ -524,16 +540,22 @@ class SqlGenerator {
 		PersistentPropertyPathExtension idDefiningParentPath = path.getIdDefiningParentPath();
 		Table parentTable = sqlContext.getTable(idDefiningParentPath);
 
+		Iterator<SqlIdentifier> parentIds = idDefiningParentPath.getIdColumnNames().listIterator();
+
 		return new Join( //
 				currentTable, //
-				currentTable.column(path.getReverseColumnName()), //
-				parentTable.column(idDefiningParentPath.getIdColumnName()) //
+				path.getReverseColumnNames().stream().map( //
+						reverseColumnName -> new JoinCondition( //
+								currentTable.column(reverseColumnName), //
+								parentTable.column(parentIds.next() //
+								) //
+						)).collect(Collectors.toList()) //
 		);
 	}
 
 	private String createFindAllInListSql() {
 
-		Select select = selectBuilder().where(getIdColumn().in(getBindMarker(IDS_SQL_PARAMETER))).build();
+		Select select = selectBuilder().where(listCondition()).build();
 
 		return render(select);
 	}
@@ -543,9 +565,9 @@ class SqlGenerator {
 		Table table = getTable();
 
 		Select select = StatementBuilder //
-				.select(Functions.count(getIdColumn())) //
+				.select(Functions.count(Expressions.asterisk())) //
 				.from(table) //
-				.where(getIdColumn().isEqualTo(getBindMarker(ID_SQL_PARAMETER))) //
+				.where(oneCondition()) //
 				.build();
 
 		return render(select);
@@ -612,7 +634,7 @@ class SqlGenerator {
 		return Update.builder() //
 				.table(table) //
 				.set(assignments) //
-				.where(getIdColumn().isEqualTo(getBindMarker(entity.getIdColumn())));
+				.where(oneCondition());
 	}
 
 	private String createDeleteSql() {
@@ -629,8 +651,7 @@ class SqlGenerator {
 	}
 
 	private DeleteBuilder.DeleteWhereAndOr createBaseDeleteById(Table table) {
-		return Delete.builder().from(table)
-				.where(getIdColumn().isEqualTo(SQL.bindMarker(":" + renderReference(ID_SQL_PARAMETER))));
+		return Delete.builder().from(table).where(oneCondition());
 	}
 
 	private String createDeleteByPathAndCriteria(PersistentPropertyPathExtension path,
@@ -642,16 +663,19 @@ class SqlGenerator {
 				.from(table);
 		Delete delete;
 
-		Column filterColumn = table.column(path.getReverseColumnName());
+		List<Column> filterColumns = path.getReverseColumnNames().stream().map(table::column).collect(Collectors.toList());
 
 		if (path.getLength() == 1) {
 
+			Condition condition = filterColumns.stream().map(rootCondition::apply).reduce((a, b) -> a.and(b))
+					.orElseGet(() -> Conditions.just("1=1"));
+
 			delete = builder //
-					.where(rootCondition.apply(filterColumn)) //
+					.where(condition) //
 					.build();
 		} else {
 
-			Condition condition = getSubselectCondition(path, rootCondition, filterColumn);
+			Condition condition = getSubselectCondition(path, rootCondition, filterColumns);
 			delete = builder.where(condition).build();
 		}
 
@@ -664,10 +688,30 @@ class SqlGenerator {
 
 		Delete delete = Delete.builder() //
 				.from(table) //
-				.where(getIdColumn().in(getBindMarker(IDS_SQL_PARAMETER))) //
+				.where(listCondition()) //
 				.build();
 
 		return render(delete);
+	}
+
+	private Condition oneCondition() {
+
+		return getIdColumns().stream() //
+				.map(idColumn -> (Condition) idColumn.isEqualTo(getBindMarker(idColumn.getName()))) //
+				.reduce((a, b) -> a.and(b)) //
+				.orElseGet(() -> Conditions.just("1=1"));
+	}
+
+	private Condition listCondition() {
+
+		List<Column> idColumns = getIdColumns();
+		Expression columnExpression = idColumns.size() == 1 ? idColumns.get(0)
+				: Expressions.rowConstructor(idColumns.toArray(new Column[0]));
+
+		return Conditions.in( //
+				columnExpression, //
+				getBindMarker(IDS_SQL_PARAMETER) //
+		);
 	}
 
 	private String render(Select select) {
@@ -690,8 +734,8 @@ class SqlGenerator {
 		return sqlContext.getTable();
 	}
 
-	private Column getIdColumn() {
-		return sqlContext.getIdColumn();
+	private List<Column> getIdColumns() {
+		return sqlContext.getIdColumns();
 	}
 
 	private Column getVersionColumn() {
@@ -722,56 +766,85 @@ class SqlGenerator {
 	static final class Join {
 
 		private final Table joinTable;
-		private final Column joinColumn;
-		private final Column parentId;
+		private final List<JoinCondition> joinConditions;
 
-		Join(Table joinTable, Column joinColumn, Column parentId) {
+		Join(Table joinTable, List<JoinCondition> joinConditions) {
 
-			Assert.notNull( joinTable,"JoinTable must not be null.");
-			Assert.notNull( joinColumn,"JoinColumn must not be null.");
-			Assert.notNull( parentId,"ParentId must not be null.");
+			Assert.notNull(joinTable, "JoinTable must not be null.");
+			Assert.notNull(joinConditions, "JoinCondition musts not be null.");
 
 			this.joinTable = joinTable;
-			this.joinColumn = joinColumn;
-			this.parentId = parentId;
+			this.joinConditions = joinConditions;
 		}
 
 		Table getJoinTable() {
 			return this.joinTable;
 		}
 
-		Column getJoinColumn() {
-			return this.joinColumn;
-		}
-
-		Column getParentId() {
-			return this.parentId;
+		public List<JoinCondition> getJoinConditions() {
+			return joinConditions;
 		}
 
 		@Override
 		public boolean equals(Object o) {
 
-			if (this == o) return true;
-			if (o == null || getClass() != o.getClass()) return false;
+			if (this == o)
+				return true;
+			if (o == null || getClass() != o.getClass())
+				return false;
 			Join join = (Join) o;
-			return joinTable.equals(join.joinTable) &&
-					joinColumn.equals(join.joinColumn) &&
-					parentId.equals(join.parentId);
+			return joinTable.equals(join.joinTable) && joinConditions.equals(join.joinConditions);
 		}
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(joinTable, joinColumn, parentId);
+			return Objects.hash(joinTable, joinConditions);
 		}
 
 		@Override
 		public String toString() {
 
-			return "Join{" +
-					"joinTable=" + joinTable +
-					", joinColumn=" + joinColumn +
-					", parentId=" + parentId +
-					'}';
+			return "Join{" + "joinTable=" + joinTable + ", joinConditions=" + joinConditions + '}';
+		}
+	}
+
+	static final class JoinCondition {
+
+		private final Column joinColumn;
+		private final Column parentId;
+
+		JoinCondition(final Column joinColumn, final Column parentId) {
+			this.joinColumn = joinColumn;
+			this.parentId = parentId;
+		}
+
+		public Column getJoinColumn() {
+			return joinColumn;
+		}
+
+		public Column getParentId() {
+			return parentId;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+
+			if (this == o)
+				return true;
+			if (o == null || getClass() != o.getClass())
+				return false;
+			JoinCondition joinCondition = (JoinCondition) o;
+			return joinColumn.equals(joinCondition.joinColumn) && parentId.equals(joinCondition.parentId);
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash(joinColumn, parentId);
+		}
+
+		@Override
+		public String toString() {
+			return "JoinCondition{joinColumn=" + joinColumn + ", parentId=" + parentId + "}";
 		}
 	}
 

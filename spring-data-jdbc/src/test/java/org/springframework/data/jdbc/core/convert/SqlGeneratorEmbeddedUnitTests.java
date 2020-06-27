@@ -270,10 +270,13 @@ public class SqlGeneratorEmbeddedUnitTests {
 		assertSoftly(softly -> {
 
 			softly.assertThat(join.getJoinTable().getName()).isEqualTo(SqlIdentifier.unquoted("other_entity"));
-			softly.assertThat(join.getJoinColumn().getTable()).isEqualTo(join.getJoinTable());
-			softly.assertThat(join.getJoinColumn().getName()).isEqualTo(SqlIdentifier.unquoted("dummy_entity2"));
-			softly.assertThat(join.getParentId().getName()).isEqualTo(SqlIdentifier.unquoted("id"));
-			softly.assertThat(join.getParentId().getTable().getName()).isEqualTo(SqlIdentifier.unquoted("dummy_entity2"));
+			softly.assertThat(join.getJoinConditions().get(0).getJoinColumn().getTable()).isEqualTo(join.getJoinTable());
+			softly.assertThat(join.getJoinConditions().get(0).getJoinColumn().getName())
+					.isEqualTo(SqlIdentifier.unquoted("dummy_entity2"));
+			softly.assertThat(join.getJoinConditions().get(0).getParentId().getName())
+					.isEqualTo(SqlIdentifier.unquoted("id"));
+			softly.assertThat(join.getJoinConditions().get(0).getParentId().getTable().getName())
+					.isEqualTo(SqlIdentifier.unquoted("dummy_entity2"));
 		});
 	}
 

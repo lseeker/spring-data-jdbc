@@ -15,6 +15,9 @@
  */
 package org.springframework.data.jdbc.core.convert;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 import org.springframework.data.relational.core.mapping.PersistentPropertyPathExtension;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.sql.Column;
@@ -27,6 +30,7 @@ import org.springframework.data.relational.core.sql.Table;
  * @author Jens Schauder
  * @author Mark Paluch
  * @author Tyler Van Gorder
+ * @author Yunyoung LEE
  * @since 1.1
  */
 class SqlContext {
@@ -40,8 +44,13 @@ class SqlContext {
 		this.table = Table.create(entity.getTableName());
 	}
 
+	@Deprecated
 	Column getIdColumn() {
 		return table.column(entity.getIdColumn());
+	}
+
+	List<Column> getIdColumns() {
+		return entity.getIdColumns().stream().map(table::column).collect(Collectors.toList());
 	}
 
 	Column getVersionColumn() {
@@ -63,7 +72,16 @@ class SqlContext {
 		return getTable(path).column(path.getColumnName()).as(path.getColumnAlias());
 	}
 
+	@Deprecated
 	Column getReverseColumn(PersistentPropertyPathExtension path) {
 		return getTable(path).column(path.getReverseColumnName()).as(path.getReverseColumnNameAlias());
+	}
+
+	List<Column> getReverseColumns(PersistentPropertyPathExtension path) {
+
+		Table table = getTable(path);
+		return path.getReverseColumnNames().stream()
+				.map(reverseColumnName -> table.column(reverseColumnName).as(path.getReverseColumnNameAlias(reverseColumnName)))
+				.collect(Collectors.toList());
 	}
 }
