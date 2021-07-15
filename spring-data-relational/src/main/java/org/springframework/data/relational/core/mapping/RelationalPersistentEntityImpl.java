@@ -20,14 +20,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
-import org.springframework.data.mapping.AssociationHandler;
 import org.springframework.data.mapping.PersistentProperty;
-import org.springframework.data.mapping.PropertyHandler;
 import org.springframework.data.mapping.model.BasicPersistentEntity;
 import org.springframework.data.relational.core.sql.SqlIdentifier;
 import org.springframework.data.util.Lazy;
 import org.springframework.data.util.TypeInformation;
-import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 /**
@@ -152,14 +149,4 @@ class RelationalPersistentEntityImpl<T> extends BasicPersistentEntity<T, Relatio
 		return String.format("RelationalPersistentEntityImpl<%s>", getType());
 	}
 	
-	// copy from from data core 2.5 for A1 release
-	public void doWithAll(PropertyHandler<RelationalPersistentProperty> handler) {
-
-		Assert.notNull(handler, "PropertyHandler must not be null!");
-
-		doWithProperties(handler);
-		doWithAssociations(
-				(AssociationHandler<RelationalPersistentProperty>) association -> handler.doWithPersistentProperty(association.getInverse()));
-	}
-
 }

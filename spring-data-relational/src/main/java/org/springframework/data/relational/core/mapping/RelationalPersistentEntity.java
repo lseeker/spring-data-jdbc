@@ -19,8 +19,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.data.mapping.AssociationHandler;
+import org.springframework.data.mapping.PropertyHandler;
 import org.springframework.data.mapping.model.MutablePersistentEntity;
 import org.springframework.data.relational.core.sql.SqlIdentifier;
+import org.springframework.util.Assert;
 
 /**
  * A {@link org.springframework.data.mapping.PersistentEntity} interface with additional methods for JDBC/RDBMS related
@@ -105,4 +108,15 @@ public interface RelationalPersistentEntity<T> extends MutablePersistentEntity<T
 
 		throw new IllegalStateException(String.format("Required identifier properties not found for %s!", getType()));
 	}
+
+	// copy from from data core 2.5 for A1 release
+	default void doWithAll(PropertyHandler<RelationalPersistentProperty> handler) {
+
+		Assert.notNull(handler, "PropertyHandler must not be null!");
+
+		doWithProperties(handler);
+		doWithAssociations((AssociationHandler<RelationalPersistentProperty>) association -> handler
+				.doWithPersistentProperty(association.getInverse()));
+	}
+
 }
