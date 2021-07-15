@@ -291,7 +291,7 @@ public class Table extends AbstractSegment {
 		 */
 		@Override
 		public String toString() {
-			return getName() + " AS " + getAlias();
+			return getName() + " " + getAlias();
 		}
 	}
 }
