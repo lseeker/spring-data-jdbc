@@ -22,8 +22,10 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Predicate;
 
 import org.springframework.dao.DataRetrievalFailureException;
@@ -114,11 +116,11 @@ public class DefaultDataAccessStrategy implements DataAccessStrategy {
 
 		identifier.forEach((name, value, type) -> addConvertedPropertyValue(parameterSource, name, value, type));
 
+		// FIXME entity has composite id and not implements Persistable, id value would not bound properly.
 		Object idValue = getIdValueOrNull(instance, persistentEntity);
 		if (idValue != null) {
 
-			RelationalPersistentProperty idProperty = persistentEntity.getRequiredIdProperty();
-			addConvertedPropertyValue(parameterSource, idProperty, idValue, idProperty.getColumnName());
+			addConvertedIdPropertyValue(parameterSource, idValue, domainType);
 		}
 
 		String insertSql = sqlGenerator.getInsert(new HashSet<>(parameterSource.getIdentifiers()));
@@ -241,12 +243,29 @@ public class DefaultDataAccessStrategy implements DataAccessStrategy {
 		String delete = sql(rootEntity.getType()).createDeleteByPath(propertyPath);
 
 		SqlIdentifierParameterSource parameters = new SqlIdentifierParameterSource(getIdentifierProcessing());
-		addConvertedPropertyValue( //
-				parameters, //
-				rootEntity.getRequiredIdProperty(), //
-				rootId, //
-				ROOT_ID_PARAMETER //
-		);
+
+		// use root condition parameter name for subselect sql
+		while (propertyPath.getLength() > 1) {
+			propertyPath = propertyPath.getParentPath();
+		}
+		List<SqlIdentifier> columnNames = new PersistentPropertyPathExtension(context, propertyPath)
+				.getEffectiveIdColumnNames();
+		RelationalPersistentEntity<?> idEntity = context.getPersistentEntity(rootId.getClass());
+
+		if (columnNames.size() > 1 && idEntity != null) {
+
+			Iterator<SqlIdentifier> nameIterator = columnNames.iterator();
+			PersistentPropertyAccessor<?> idAccessor = idEntity.getPropertyAccessor(rootId);
+
+			rootEntity.getIdProperties().forEach(idProperty -> {
+				Object value = idAccessor.getProperty(idProperty);
+				addConvertedPropertyValue(parameters, nameIterator.next(), value, value.getClass());
+			});
+		} else {
+
+			columnNames.forEach(columnName -> addConvertedPropertyValue(parameters, columnName, rootId, rootId.getClass()));
+		}
+
 		operations.update(delete, parameters);
 	}
 
@@ -347,10 +366,9 @@ public class DefaultDataAccessStrategy implements DataAccessStrategy {
 			return Collections.emptyList();
 		}
 
-		RelationalPersistentProperty idProperty = getRequiredPersistentEntity(domainType).getRequiredIdProperty();
 		SqlIdentifierParameterSource parameterSource = new SqlIdentifierParameterSource(getIdentifierProcessing());
 
-		addConvertedPropertyValuesAsList(parameterSource, idProperty, ids, IDS_SQL_PARAMETER);
+		addConvertedIdPropertyValuesAsList(parameterSource, domainType, ids, IDS_SQL_PARAMETER);
 
 		String findAllInListSql = sql(domainType).getFindAllInList();
 
@@ -482,10 +500,20 @@ public class DefaultDataAccessStrategy implements DataAccessStrategy {
 	private static <S, ID> boolean isIdPropertyNullOrScalarZero(@Nullable ID idValue,
 			RelationalPersistentEntity<S> persistentEntity) {
 
-		RelationalPersistentProperty idProperty = persistentEntity.getIdProperty();
-		return idValue == null //
-				|| idProperty == null //
-				|| (idProperty.getType() == int.class && idValue.equals(0)) //
+		if (idValue == null) {
+			return true;
+		}
+
+		List<RelationalPersistentProperty> idProperties = persistentEntity.getIdProperties();
+		if (idProperties.size() == 0) {
+			return true;
+		} else if (idProperties.size() > 1) {
+			return false;
+		}
+
+		RelationalPersistentProperty idProperty = idProperties.get(0);
+
+		return (idProperty.getType() == int.class && idValue.equals(0)) //
 				|| (idProperty.getType() == long.class && idValue.equals(0L));
 	}
 
@@ -529,12 +557,8 @@ public class DefaultDataAccessStrategy implements DataAccessStrategy {
 
 		SqlIdentifierParameterSource parameterSource = new SqlIdentifierParameterSource(getIdentifierProcessing());
 
-		addConvertedPropertyValue( //
-				parameterSource, //
-				getRequiredPersistentEntity(domainType).getRequiredIdProperty(), //
-				id, //
-				ID_SQL_PARAMETER //
-		);
+		addConvertedIdPropertyValue(parameterSource, id, domainType);
+
 		return parameterSource;
 	}
 
@@ -569,8 +593,45 @@ public class DefaultDataAccessStrategy implements DataAccessStrategy {
 				JdbcUtil.sqlTypeFor(jdbcValue.getJdbcType()));
 	}
 
-	private void addConvertedPropertyValuesAsList(SqlIdentifierParameterSource parameterSource,
-			RelationalPersistentProperty property, Iterable<?> values, SqlIdentifier paramName) {
+	private void addConvertedIdPropertyValue(SqlIdentifierParameterSource parameterSource, Object id,
+			Class<?> domainType) {
+
+		List<RelationalPersistentProperty> idProperties = getRequiredPersistentEntity(domainType).getIdProperties();
+		PersistentPropertyAccessor<?> idAccessor = Optional.ofNullable(context.getPersistentEntity(id.getClass()))
+				.map(idEntity -> idEntity.getPropertyAccessor(id)).orElse(null);
+
+		idProperties.forEach(idProperty -> {
+			addConvertedPropertyValue( //
+					parameterSource, //
+					idProperty, idAccessor == null ? id : idAccessor.getProperty(idProperty), //
+					idProperty.getColumnName() //
+			);
+		});
+	}
+
+	private void addConvertedIdPropertyValuesAsList(SqlIdentifierParameterSource parameterSource, Class<?> domainType,
+			Iterable<?> values, SqlIdentifier paramName) {
+
+		List<RelationalPersistentProperty> idProperties = getRequiredPersistentEntity(domainType).getRequiredIdProperties();
+
+		if (idProperties.size() > 1) {
+
+			// NamedParamterUtils#substituteNamedParameters handles Object[] parameterSource as multiple parameter value
+			List<Object[]> idParameters = new ArrayList<>();
+
+			values.forEach(value -> {
+				PersistentPropertyAccessor<?> idAccessor = Optional.ofNullable(context.getPersistentEntity(value.getClass()))
+						.map(idEntity -> idEntity.getPropertyAccessor(value)).orElse(null);
+
+				idParameters.add(idProperties.stream()
+						.map(idProperty -> idAccessor == null ? value : idAccessor.getProperty(idProperty)).toArray());
+			});
+
+			parameterSource.addValue(paramName, idParameters);
+			return;
+		}
+
+		RelationalPersistentProperty property = idProperties.get(0);
 
 		List<Object> convertedIds = new ArrayList<>();
 		JdbcValue jdbcValue = null;

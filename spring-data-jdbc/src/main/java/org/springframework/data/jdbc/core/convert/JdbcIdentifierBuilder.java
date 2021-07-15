@@ -15,7 +15,14 @@
  */
 package org.springframework.data.jdbc.core.convert;
 
+import java.util.Iterator;
+import java.util.Optional;
+
+import org.springframework.data.mapping.PersistentPropertyAccessor;
 import org.springframework.data.relational.core.mapping.PersistentPropertyPathExtension;
+import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
+import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
+import org.springframework.data.relational.core.sql.SqlIdentifier;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
@@ -23,6 +30,7 @@ import org.springframework.util.Assert;
  * Builder for {@link Identifier}. Mainly for internal use within the framework
  *
  * @author Jens Schauder
+ * @author Yunyoung LEE
  * @since 1.1
  */
 public class JdbcIdentifierBuilder {
@@ -43,11 +51,33 @@ public class JdbcIdentifierBuilder {
 	public static JdbcIdentifierBuilder forBackReferences(JdbcConverter converter, PersistentPropertyPathExtension path,
 			@Nullable Object value) {
 
-		Identifier identifier = Identifier.of( //
-				path.getReverseColumnName(), //
-				value, //
-				converter.getColumnType(path.getIdDefiningParentPath().getRequiredIdProperty()) //
-		);
+		RelationalPersistentEntity<?> idEntity = Optional.ofNullable(value).map(Object::getClass)
+				.map(type -> converter.getMappingContext().getPersistentEntity(type)).orElse(null);
+
+		Iterator<SqlIdentifier> reverseColumnNames = path.getReverseColumnNames().iterator();
+		Identifier identifier = null;
+		if (idEntity == null) {
+
+			identifier = Identifier.of( //
+					reverseColumnNames.next(), //
+					value, //
+					converter.getColumnType(path.getIdDefiningParentPath().getRequiredIdProperties().get(0)) //
+			);
+		} else {
+
+			PersistentPropertyAccessor<?> accessor = idEntity.getPropertyAccessor(value);
+
+			identifier = Identifier.empty();
+			for (RelationalPersistentProperty property : idEntity) {
+
+				Assert.isTrue(reverseColumnNames.hasNext(), () -> "no reverse column name for " + property.getName());
+				identifier = identifier.withPart( //
+						reverseColumnNames.next(), //
+						accessor.getProperty(property), //
+						converter.getColumnType(property) //
+				);
+			}
+		}
 
 		return new JdbcIdentifierBuilder(identifier);
 	}

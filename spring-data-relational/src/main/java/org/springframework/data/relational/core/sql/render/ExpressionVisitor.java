@@ -15,15 +15,7 @@
  */
 package org.springframework.data.relational.core.sql.render;
 
-import org.springframework.data.relational.core.sql.BindMarker;
-import org.springframework.data.relational.core.sql.Column;
-import org.springframework.data.relational.core.sql.Condition;
-import org.springframework.data.relational.core.sql.Expression;
-import org.springframework.data.relational.core.sql.Literal;
-import org.springframework.data.relational.core.sql.Named;
-import org.springframework.data.relational.core.sql.SimpleFunction;
-import org.springframework.data.relational.core.sql.SubselectExpression;
-import org.springframework.data.relational.core.sql.Visitable;
+import org.springframework.data.relational.core.sql.*;
 import org.springframework.lang.Nullable;
 
 /**
@@ -31,6 +23,7 @@ import org.springframework.lang.Nullable;
  *
  * @author Mark Paluch
  * @author Jens Schauder
+ * @author Yunyoung LEE
  * @since 1.1
  * @see Column
  * @see SubselectExpression
@@ -63,6 +56,13 @@ class ExpressionVisitor extends TypedSubtreeVisitor<Expression> implements PartR
 		if (segment instanceof SimpleFunction) {
 
 			SimpleFunctionVisitor visitor = new SimpleFunctionVisitor(context);
+			partRenderer = visitor;
+			return Delegation.delegateTo(visitor);
+		}
+
+		if (segment instanceof RowConstructor) {
+
+			RowConstructorVisitor visitor = new RowConstructorVisitor(context);
 			partRenderer = visitor;
 			return Delegation.delegateTo(visitor);
 		}

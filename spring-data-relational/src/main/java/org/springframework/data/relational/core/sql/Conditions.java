@@ -28,6 +28,7 @@ import org.springframework.util.Assert;
  * @author Jens Schauder
  * @author Meng Zuozhu
  * @author Daniele Canteri
+ * @author Yunyoung LEE
  * @since 1.1
  * @see SQL
  * @see Expressions
@@ -242,6 +243,22 @@ public abstract class Conditions {
 		Assert.notNull(subselect, "Subselect must not be null");
 
 		return in(column, new SubselectExpression(subselect));
+	}
+
+	/**
+	 * Creates a {@code IN} {@link Condition clause} for a {@link Select subselect}.
+	 * 
+	 * @param columnOrExpression left hand side of the {@link Condition} must not be {@literal null}.
+	 * @param subselect the subselect.
+	 * @return the {@link In} condition.
+	 * @since 2.3
+	 */
+	public static In in(Expression columnOrExpression, Select subselect) {
+
+		Assert.notNull(columnOrExpression, "Comparison column or expression must not be null");
+		Assert.notNull(subselect, "Subselect must not be null");
+
+		return in(columnOrExpression, new SubselectExpression(subselect));
 	}
 
 	/**

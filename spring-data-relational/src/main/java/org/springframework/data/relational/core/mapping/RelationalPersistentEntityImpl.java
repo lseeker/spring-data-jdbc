@@ -15,9 +15,13 @@
  */
 package org.springframework.data.relational.core.mapping;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.mapping.AssociationHandler;
+import org.springframework.data.mapping.PersistentProperty;
 import org.springframework.data.mapping.PropertyHandler;
 import org.springframework.data.mapping.model.BasicPersistentEntity;
 import org.springframework.data.relational.core.sql.SqlIdentifier;
@@ -32,6 +36,7 @@ import org.springframework.util.StringUtils;
  * @author Jens Schauder
  * @author Greg Turnquist
  * @author Bastian Wilhelm
+ * @author Yunyoung LEE
  */
 class RelationalPersistentEntityImpl<T> extends BasicPersistentEntity<T, RelationalPersistentProperty>
 		implements RelationalPersistentEntity<T> {
@@ -39,6 +44,7 @@ class RelationalPersistentEntityImpl<T> extends BasicPersistentEntity<T, Relatio
 	private final NamingStrategy namingStrategy;
 	private final Lazy<Optional<SqlIdentifier>> tableName;
 	private boolean forceQuote = true;
+	private final List<RelationalPersistentProperty> idProperties = new ArrayList<>();
 
 	/**
 	 * Creates a new {@link RelationalPersistentEntityImpl} for the given {@link TypeInformation}.
@@ -95,8 +101,46 @@ class RelationalPersistentEntityImpl<T> extends BasicPersistentEntity<T, Relatio
 	 * @see org.springframework.data.relational.core.mapping.model.RelationalPersistentEntity#getIdColumn()
 	 */
 	@Override
+	@Deprecated
 	public SqlIdentifier getIdColumn() {
 		return getRequiredIdProperty().getColumnName();
+	}
+
+	@Override
+	public void addPersistentProperty(RelationalPersistentProperty property) {
+		super.addPersistentProperty(property);
+
+		if (property.isIdProperty()) {
+			idProperties.add(property);
+		}
+	}
+
+	@Override
+	@Deprecated
+	public RelationalPersistentProperty getIdProperty() {
+		return idProperties.stream().findFirst().orElse(null);
+	}
+
+	@Override
+	public List<RelationalPersistentProperty> getIdProperties() {
+		return Collections.unmodifiableList(idProperties);
+	}
+
+	@Override
+	public boolean hasIdProperty() {
+		return !idProperties.isEmpty();
+	}
+
+	@Override
+	public boolean isIdProperty(PersistentProperty<?> property) {
+		return idProperties.contains(property);
+	}
+
+	@Override
+	protected RelationalPersistentProperty returnPropertyIfBetterIdPropertyCandidateOrNull(
+			RelationalPersistentProperty property) {
+		// always return null for composite id handling
+		return null;
 	}
 
 	/*

@@ -19,8 +19,10 @@ import java.sql.Array;
 import java.sql.JDBCType;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +31,7 @@ import org.springframework.context.ApplicationContextAware;
 import org.springframework.core.convert.ConverterNotFoundException;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.convert.CustomConversions;
+import org.springframework.data.domain.Persistable;
 import org.springframework.data.jdbc.core.mapping.AggregateReference;
 import org.springframework.data.jdbc.support.JdbcUtil;
 import org.springframework.data.mapping.PersistentPropertyAccessor;
@@ -47,6 +50,7 @@ import org.springframework.data.relational.core.mapping.PersistentPropertyPathEx
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
 import org.springframework.data.relational.core.sql.IdentifierProcessing;
+import org.springframework.data.relational.repository.support.MappingRelationalEntityInformation;
 import org.springframework.data.util.ClassTypeInformation;
 import org.springframework.data.util.TypeInformation;
 import org.springframework.lang.Nullable;
@@ -62,6 +66,7 @@ import org.springframework.util.Assert;
  * @author Jens Schauder
  * @author Christoph Strobl
  * @author Myeonghyeon Lee
+ * @author Yunyoung LEE
  * @see MappingContext
  * @see SimpleTypeHolder
  * @see CustomConversions
@@ -444,11 +449,7 @@ public class BasicJdbcConverter extends BasicRelationalConverter implements Jdbc
 
 		T mapRow() {
 
-			RelationalPersistentProperty idProperty = entity.getIdProperty();
-
-			Object idValue = idProperty == null ? null : readFrom(idProperty);
-
-			return createInstanceInternal(idValue);
+			return createInstanceInternal(createIdObjectFromEntity(entity));
 		}
 
 		private T populateProperties(T instance, @Nullable Object idValue) {
@@ -499,7 +500,7 @@ public class BasicJdbcConverter extends BasicRelationalConverter implements Jdbc
 
 			Identifier identifier = id == null //
 					? this.identifier.withPart(rootPath.getQualifierColumn(), key, Object.class) //
-					: Identifier.of(rootPath.extendBy(property).getReverseColumnName(), id, Object.class);
+					: JdbcIdentifierBuilder.forBackReferences(BasicJdbcConverter.this, rootPath.extendBy(property), id).build();
 
 			PersistentPropertyPath<? extends RelationalPersistentProperty> propertyPath = path.extendBy(property)
 					.getRequiredPersistentPropertyPath();
@@ -638,6 +639,31 @@ public class BasicJdbcConverter extends BasicRelationalConverter implements Jdbc
 				return (T) readOrLoadProperty(idValue, property);
 			}
 		}
+
+		private Object createIdObjectFromEntity(RelationalPersistentEntity<T> entity) {
+
+			List<RelationalPersistentProperty> idProperties = entity.getIdProperties();
+
+			if (idProperties.size() == 1) {
+
+				return readFrom(idProperties.get(0));
+			} else if (idProperties.size() > 1) {
+
+				Assert.state(entity.getTypeInformation().isSubTypeOf(Persistable.class),
+						"Composite id entity should implements Persistable.");
+
+				Map<String, Object> idValues = idProperties.stream()
+						.collect(Collectors.toMap(RelationalPersistentProperty::getName, this::readFrom));
+
+				Class<?> idClass = new MappingRelationalEntityInformation(entity).getIdType();
+				RelationalPersistentEntity<?> idEntity = getMappingContext().getRequiredPersistentEntity(idClass);
+
+				return createInstance(idEntity, parameter -> idValues.get(parameter.getName()));
+			}
+
+			return null;
+		}
+
 	}
 
 	private boolean isSimpleProperty(RelationalPersistentProperty property) {

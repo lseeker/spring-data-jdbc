@@ -31,6 +31,10 @@ abstract class AbstractSegment implements Segment {
 		this.children = children;
 	}
 
+	protected Segment[] getChildren() {
+		return children;
+	}
+
 	/*
 	 * (non-Javadoc)
 	 * @see org.springframework.data.relational.core.sql.Visitable#visit(org.springframework.data.relational.core.sql.Visitor)

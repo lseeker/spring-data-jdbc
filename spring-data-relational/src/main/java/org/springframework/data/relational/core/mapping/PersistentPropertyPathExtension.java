@@ -15,6 +15,9 @@
  */
 package org.springframework.data.relational.core.mapping;
 
+import java.util.List;
+import java.util.Objects;
+
 import org.springframework.data.mapping.PersistentProperty;
 import org.springframework.data.mapping.PersistentPropertyPath;
 import org.springframework.data.mapping.context.MappingContext;
@@ -24,13 +27,12 @@ import org.springframework.data.util.Lazy;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
-import java.util.Objects;
-
 /**
  * A wrapper around a {@link org.springframework.data.mapping.PersistentPropertyPath} for making common operations
  * available used in SQL generation and conversion
  *
  * @author Jens Schauder
+ * @author Yunyoung LEE
  * @since 1.1
  */
 public class PersistentPropertyPathExtension {
@@ -156,7 +158,9 @@ public class PersistentPropertyPathExtension {
 	 * The name of the column used to reference the id in the parent table.
 	 *
 	 * @throws IllegalStateException when called on an empty path.
+	 * @deprecated since 2.3, use {@link #getReverseColumnNames()} to support composite id.
 	 */
+	@Deprecated
 	public SqlIdentifier getReverseColumnName() {
 
 		Assert.state(path != null, "Empty paths don't have a reverse column name");
@@ -164,13 +168,40 @@ public class PersistentPropertyPathExtension {
 	}
 
 	/**
+	 * The list of the column names used to reference ids in the parent table.
+	 *
+	 * @throws IllegalStateException when called on an empty path.
+	 * @since 2.3
+	 */
+	public List<SqlIdentifier> getReverseColumnNames() {
+
+		Assert.state(path != null, "Empty paths don't have a reverse column name");
+		return path.getRequiredLeafProperty().getReverseColumnNames(this);
+	}
+
+	/**
 	 * The alias used in select for the column used to reference the id in the parent table.
 	 *
 	 * @throws IllegalStateException when called on an empty path.
+	 * @since 2.3, use {@link #getReverseColumnNameAlias(SqlIdentifier)} to support composite id.
 	 */
+	@Deprecated
 	public SqlIdentifier getReverseColumnNameAlias() {
 
 		return prefixWithTableAlias(getReverseColumnName());
+	}
+
+	/**
+	 * The alias used in select for the column used to reference column name in the parent table.
+	 * 
+	 * @param reverseColumnName reference column name.
+	 * @return The alias used in select for the reverseColumnName.
+	 * @throws IllegalStateException when called on an empty path.
+	 * @since 2.3
+	 */
+	public SqlIdentifier getReverseColumnNameAlias(SqlIdentifier reverseColumnName) {
+
+		return prefixWithTableAlias(reverseColumnName);
 	}
 
 	/**
@@ -248,19 +279,47 @@ public class PersistentPropertyPathExtension {
 
 	/**
 	 * The column name of the id column of the ancestor path that represents an actual table.
+	 * 
+	 * @deprecated since 2.3, use {@link #getIdColumnNames()} to support composite id.
 	 */
+	@Deprecated
 	public SqlIdentifier getIdColumnName() {
 		return getTableOwningAncestor().getRequiredLeafEntity().getIdColumn();
 	}
 
 	/**
+	 * List of column name of id columns of the ancestor path that represents an actual table.
+	 * 
+	 * @return {@link SqlIdentifier} of id columns.
+	 * @since 2.3
+	 */
+	public List<SqlIdentifier> getIdColumnNames() {
+		return getTableOwningAncestor().getRequiredLeafEntity().getIdColumns();
+	}
+
+	/**
 	 * If the table owning ancestor has an id the column name of that id property is returned. Otherwise the reverse
 	 * column is returned.
+	 * 
+	 * @deprecated since 2.3, use {@link #getEffectiveIdColumnNames()} to support composite id.
 	 */
+	@Deprecated
 	public SqlIdentifier getEffectiveIdColumnName() {
 
 		PersistentPropertyPathExtension owner = getTableOwningAncestor();
 		return owner.path == null ? owner.getRequiredLeafEntity().getIdColumn() : owner.getReverseColumnName();
+	}
+
+	/**
+	 * If the table owning ancestor has ids, column names of that id properties is returned. Otherwise the reverse columns
+	 * are returned.
+	 * 
+	 * @since 2.3
+	 */
+	public List<SqlIdentifier> getEffectiveIdColumnNames() {
+
+		PersistentPropertyPathExtension owner = getTableOwningAncestor();
+		return owner.path == null ? owner.getRequiredLeafEntity().getIdColumns() : owner.getReverseColumnNames();
 	}
 
 	/**
@@ -285,9 +344,22 @@ public class PersistentPropertyPathExtension {
 	 *
 	 * @return Guaranteed to be not {@literal null}.
 	 * @throws IllegalStateException if no such property exists.
+	 * @deprecated since 2.3, use {@link #getRequiredIdProperties()} to support composite id.
 	 */
+	@Deprecated
 	public RelationalPersistentProperty getRequiredIdProperty() {
 		return this.path == null ? entity.getRequiredIdProperty() : getRequiredLeafEntity().getRequiredIdProperty();
+	}
+
+	/**
+	 * List of id properties of the final element of the path.
+	 * 
+	 * @return Guaranteed to be not {@literal null}.
+	 * @throws IllegalStateException if no such property exists.
+	 * @since 2.3
+	 */
+	public List<RelationalPersistentProperty> getRequiredIdProperties() {
+		return this.path == null ? entity.getRequiredIdProperties() : getRequiredLeafEntity().getRequiredIdProperties();
 	}
 
 	/**
@@ -438,11 +510,12 @@ public class PersistentPropertyPathExtension {
 	@Override
 	public boolean equals(Object o) {
 
-		if (this == o) return true;
-		if (o == null || getClass() != o.getClass()) return false;
+		if (this == o)
+			return true;
+		if (o == null || getClass() != o.getClass())
+			return false;
 		PersistentPropertyPathExtension that = (PersistentPropertyPathExtension) o;
-		return entity.equals(that.entity) &&
-				path.equals(that.path);
+		return entity.equals(that.entity) && path.equals(that.path);
 	}
 
 	@Override

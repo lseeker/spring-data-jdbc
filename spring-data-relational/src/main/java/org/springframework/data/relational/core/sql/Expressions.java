@@ -20,6 +20,7 @@ package org.springframework.data.relational.core.sql;
  *
  * @author Mark Paluch
  * @author Jens Schauder
+ * @author Yunyoung LEE
  * @since 1.1
  * @see SQL
  * @see Conditions
@@ -51,6 +52,17 @@ public abstract class Expressions {
 	 */
 	public static Expression asterisk(Table table) {
 		return table.asterisk();
+	}
+
+	/**
+	 * Create SQL row constructor from {@link Expression}s.
+	 * 
+	 * @param expressions nested {@link Expression}s.
+	 * @return a new {@link RowConstructor} expression.
+	 * @since 2.3
+	 */
+	public static Expression rowConstructor(Expression... expressions) {
+		return new RowConstructor(expressions);
 	}
 
 	// Utility constructor.
