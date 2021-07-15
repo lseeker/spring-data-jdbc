@@ -43,7 +43,7 @@ public interface RelationalPersistentProperty extends PersistentProperty<Relatio
 	SqlIdentifier getColumnName();
 
 	@Override
-	RelationalPersistentEntity<?> getOwner();
+	RelationalPersistentEntity getOwner();
 
 	SqlIdentifier getReverseColumnName(PersistentPropertyPathExtension path);
 
