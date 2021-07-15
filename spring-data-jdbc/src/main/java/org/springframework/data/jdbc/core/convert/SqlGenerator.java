@@ -420,6 +420,7 @@ class SqlGenerator {
 		Table table = getTable();
 
 		List<Expression> columnExpressions = new ArrayList<>();
+		List<SqlIdentifier> keyIdentifiers = new ArrayList<>(keyColumns);
 
 		List<Join> joinTables = new ArrayList<>();
 		for (PersistentPropertyPath<RelationalPersistentProperty> path : mappingContext
@@ -436,10 +437,13 @@ class SqlGenerator {
 			Column column = getColumn(extPath);
 			if (column != null) {
 				columnExpressions.add(column);
+				
+				// remove if same reference exists
+				keyIdentifiers.remove(column.getReferenceName());
 			}
 		}
 
-		for (SqlIdentifier keyColumn : keyColumns) {
+		for (SqlIdentifier keyColumn : keyIdentifiers) {
 			columnExpressions.add(table.column(keyColumn).as(keyColumn));
 		}
 
